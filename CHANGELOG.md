@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — 2026-10-14
+## 0.3.0 — 2026-10-14
 
 - Split packages: XAPK, APKS and APKM are installed through one package-manager session
   (`install-create` / `install-write` / `install-commit`); splits for other ABIs are skipped and

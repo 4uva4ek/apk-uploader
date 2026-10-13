@@ -1,4 +1,4 @@
-# APK Uploader 0.2.0
+# APK Uploader 0.3.0
 
 Installed 0.1.0 updates itself through **Updates**; otherwise extract the ZIP and run `ApkUploader.exe`.
 
