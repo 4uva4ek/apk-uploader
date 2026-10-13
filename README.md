@@ -1,7 +1,7 @@
 # APK Uploader
 
 Installs APK files and game caches on **Samsung Galaxy XR** over ADB, from a Windows PC.
-Maintained by **4uva4ek**. [Russian guide](README-RU.md).
+Maintained by **4uva4ek**.
 
 Download the ZIP from [Releases](https://github.com/4uva4ek/apk-uploader/releases), extract it
 and run `ApkUploader.exe`. Java and adb are included; nothing else needs to be installed.
