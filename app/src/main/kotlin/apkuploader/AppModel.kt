@@ -11,8 +11,11 @@ import apkuploader.adb.DeviceQueries
 import apkuploader.adb.ServerStatus
 import apkuploader.cache.DropAnalyzer
 import apkuploader.install.InstallQueue
+import apkuploader.install.InstalledApp
+import apkuploader.install.InstalledApps
 import apkuploader.install.QueueItem
 import apkuploader.install.QueueListener
+import apkuploader.settings.LabelStore
 import apkuploader.settings.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +51,19 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
     /** Recent log lines for the window's log panel. */
     val logLines = mutableStateListOf<String>()
 
+    /** Labels of packages installed through this app, by package name. */
+    val labels = LabelStore()
+
+    /** Third-party apps on the selected device; null until loaded for the current device. */
+    var apps by mutableStateOf<List<InstalledApp>?>(null)
+        private set
+    var appsLoading by mutableStateOf(false)
+        private set
+    var appsProgress by mutableStateOf<String?>(null)
+        private set
+    var appsError by mutableStateOf<String?>(null)
+        private set
+
     /** Set by the window to show system notifications. */
     var notifier: ((title: String, message: String, success: Boolean) -> Unit)? = null
 
@@ -80,6 +96,8 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
         val previous = selectedSerial.value
         selectedSerial.value = readySerial
         details = null
+        apps = null
+        appsError = null
         if (readySerial != null && choice != null) {
             AppLog.info("Device ready: ${choice.serial} (${choice.displayName}, ${choice.transportLabel})")
             refreshDetails(readySerial)
@@ -125,6 +143,44 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
     fun uninstall(item: QueueItem.Installable) {
         AppLog.info("Queued uninstall of ${item.packageName}")
         queue.addUninstall(item.packageName, item.title)
+    }
+
+    /** Reloads the third-party app list of the selected device. */
+    fun refreshApps() {
+        val serial = selectedSerial.value ?: return
+        if (appsLoading) return
+        appsLoading = true
+        appsError = null
+        appsProgress = "Listing packages…"
+        scope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    InstalledApps.list(session.client, serial) { done, total -> appsProgress = "Reading $done of $total packages…" }
+                }
+                if (selectedSerial.value == serial) apps = list
+                AppLog.info("Listed ${list.size} third-party packages on $serial")
+            } catch (e: Exception) {
+                appsError = e.message ?: "Could not list the installed apps."
+                AppLog.error("Listing apps failed: ${e.message}")
+            } finally {
+                appsLoading = false
+                appsProgress = null
+            }
+        }
+    }
+
+    fun uninstallPackage(app: InstalledApp) {
+        val label = labels[app.packageName] ?: app.packageName
+        AppLog.info("Queued uninstall of ${app.packageName}")
+        queue.addUninstall(app.packageName, label)
+    }
+
+    /** Removes the OBB and data folders of a package listed in the installed-apps dialog. */
+    fun removeCacheOf(app: InstalledApp) {
+        val label = labels[app.packageName] ?: app.packageName
+        if (app.obbKb > 0) queue.addRemoveCacheRoot("$label OBB", app.obbRoot)
+        if (app.dataKb > 0) queue.addRemoveCacheRoot("$label data", app.dataRoot)
+        AppLog.info("Queued cache removal for ${app.packageName}")
     }
 
     fun removeCache(item: QueueItem) {
@@ -180,6 +236,12 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
     }
 
     override fun log(message: String) = AppLog.info(message)
+
+    override fun installed(packageName: String, label: String) = labels.put(packageName, label)
+
+    override fun packagesChanged() {
+        if (apps != null) scope.launch { refreshApps() }
+    }
 
     fun shutdown() {
         queue.cancelCurrent()

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Settings
@@ -52,6 +53,7 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
         var showUpdates by remember { mutableStateOf(false) }
         var showConnect by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
+        var showApps by remember { mutableStateOf(false) }
         var uninstallTarget by remember { mutableStateOf<QueueItem.Installable?>(null) }
         var uninstallAndRetryTarget by remember { mutableStateOf<QueueItem.Installable?>(null) }
         var removeCacheTarget by remember { mutableStateOf<QueueItem?>(null) }
@@ -76,6 +78,9 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
                     actions = {
                         DeviceChip(model) { showConnect = true }
                         Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = { showApps = true }, enabled = model.selected?.isReady == true) {
+                            Icon(Icons.Default.Apps, contentDescription = "Installed apps")
+                        }
                         IconButton(onClick = { model.settings.update { copy(showLog = !showLog) } }) {
                             Icon(Icons.Default.Description, contentDescription = "Log", tint = if (showLog) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                         }
@@ -133,6 +138,7 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
         if (showUpdates) UpdateDialog(updates) { showUpdates = false }
         if (showConnect) ConnectDialog(model) { showConnect = false }
         if (showSettings) SettingsDialog(model) { showSettings = false }
+        if (showApps) AppsDialog(model) { showApps = false }
 
         model.inputRequests.firstOrNull()?.let { item ->
             CacheTargetDialog(

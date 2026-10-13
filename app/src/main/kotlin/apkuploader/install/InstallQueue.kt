@@ -120,6 +120,12 @@ interface QueueListener {
     fun notify(title: String, message: String, success: Boolean)
     fun needsInput(item: QueueItem.Cache)
     fun log(message: String)
+
+    /** A package was installed through this app; remember its label. */
+    fun installed(packageName: String, label: String) {}
+
+    /** Packages or caches on the device changed; refresh any installed-apps listing. */
+    fun packagesChanged() {}
 }
 
 /** Sequential install/copy worker for the selected device. */
@@ -169,6 +175,12 @@ class InstallQueue(
 
     fun addRemoveBundleObbs(item: QueueItem.Bundle) {
         items += QueueItem.RemoveCache(nextId++, "${item.title} OBB", null, item.bundle.obbs.map { it.remotePath })
+        ensureWorker()
+    }
+
+    /** Removes a package folder under /sdcard/Android/obb or /sdcard/Android/data. */
+    fun addRemoveCacheRoot(label: String, root: String) {
+        items += QueueItem.RemoveCache(nextId++, label, root, emptyList())
         ensureWorker()
     }
 
@@ -278,6 +290,8 @@ class InstallQueue(
             val replaced = installed?.versionName?.let { " (replaced $it)" } ?: ""
             item.state = ItemState.Done("Installed ${item.versionName}$replaced$extra")
             listener.log("${item.packageName} installed: ${item.versionName} (${item.versionCode})$extra")
+            listener.installed(item.packageName, item.title)
+            listener.packagesChanged()
             listener.notify("Installed", "${item.title} ${item.versionName}", true)
         } else {
             val friendly = friendlyError(result.message)
@@ -373,6 +387,7 @@ class InstallQueue(
         if (installer.installed(serial, item.packageName) == null) {
             item.state = ItemState.Done("Uninstalled ${item.packageName}")
             listener.log("${item.packageName} uninstalled")
+            listener.packagesChanged()
             listener.notify("Uninstalled", item.label, true)
         } else {
             item.state = ItemState.Failed(friendlyError(result.message))
@@ -402,6 +417,7 @@ class InstallQueue(
             item.state = ItemState.Done("Removed ${files.size} file(s)")
         }
         listener.log("Removed cache: ${item.subtitle}")
+        listener.packagesChanged()
         listener.notify("Cache removed", item.label, true)
     }
 

@@ -21,6 +21,8 @@ and run `ApkUploader.exe`. Java and adb are included; nothing else needs to be i
    signature or a newer version, **Uninstall and retry** removes it first (its data is lost).
    **Uninstall** and **Remove cache** on an item remove the app or its copied files from the
    headset after confirmation.
+4. **Installed apps** (grid icon in the top bar) lists the third-party apps on the headset with
+   their OBB/data sizes; each can be uninstalled or have its cache removed.
 
 Cache folders are recognised by their layout ([details](docs/CACHE-LAYOUT.md)):
 `*.obb` files go to `/sdcard/Android/obb/<package>/`, a folder named like a package goes to

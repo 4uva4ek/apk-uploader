@@ -5,6 +5,8 @@
 - Split packages: XAPK, APKS and APKM are installed through one package-manager session
   (`install-create` / `install-write` / `install-commit`); splits for other ABIs are skipped and
   XAPK OBB expansions are copied straight from the archive.
+- **Installed apps** dialog: third-party packages on the headset with version and OBB/data sizes,
+  filter, Uninstall and Remove cache for any of them. Names are remembered for apps installed here.
 - **Uninstall** and **Remove cache** actions on queue items, with confirmation.
 - Rookie `install.txt`: `adb push` lines define the destinations; every other line is shown and ignored.
 - Optional MD5 verification of copied caches (device `md5sum` against hashes computed while uploading).

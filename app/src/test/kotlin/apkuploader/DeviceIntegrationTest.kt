@@ -87,6 +87,22 @@ class DeviceIntegrationTest {
     }
 
     @Test
+    fun listsInstalledAppsOnRealDevice() {
+        if (System.getenv("APK_UPLOADER_TEST_APK").isNullOrBlank()) {
+            println("skipped: APK_UPLOADER_TEST_APK is not set")
+            return
+        }
+        val (client, serial) = connect()
+        val started = System.nanoTime()
+        val apps = apkuploader.install.InstalledApps.list(client, serial) { done, total -> println("progress $done/$total") }
+        println("Listed ${apps.size} third-party packages in ${(System.nanoTime() - started) / 1_000_000} ms")
+        apps.take(5).forEach { println("  ${it.packageName} ${it.version} obb=${it.obbKb}K data=${it.dataKb}K") }
+        assertTrue(apps.isNotEmpty())
+        assertTrue(apps.all { it.packageName.contains('.') })
+        assertTrue(apps.any { it.versionName != null }, "versionName should be read for at least one package")
+    }
+
+    @Test
     fun installXapkWithSplitAndObbOnRealDevice() {
         val xapkPath = System.getenv("APK_UPLOADER_TEST_XAPK")
         if (xapkPath.isNullOrBlank()) {
