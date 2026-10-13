@@ -20,6 +20,10 @@ object AppLog {
 
     val path: File? get() = file
 
+    /** Receives every formatted line; the window shows them in its log panel. */
+    @Volatile
+    var listener: ((String) -> Unit)? = null
+
     fun info(message: String) = write("INFO ", message)
 
     fun warn(message: String) = write("WARN ", message)
@@ -37,6 +41,7 @@ object AppLog {
             file?.appendText(line + System.lineSeparator())
         } catch (_: Exception) {
         }
+        listener?.invoke(line)
     }
 
     private fun pruneOldLogs(directory: File, keep: Int) {

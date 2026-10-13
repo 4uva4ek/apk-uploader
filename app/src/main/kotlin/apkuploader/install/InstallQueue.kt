@@ -5,9 +5,11 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import apkuploader.adb.AdbClient
+import apkuploader.adb.AdbException
 import apkuploader.adb.DeviceQueries
 import apkuploader.adb.formatBytes
 import apkuploader.apk.ApkInfo
+import apkuploader.apk.SplitBundle
 import apkuploader.cache.CacheKind
 import apkuploader.cache.CachePlan
 import apkuploader.settings.Settings
@@ -47,14 +49,38 @@ sealed class QueueItem(val id: Int) {
     abstract val totalBytes: Long
     abstract val icon: ByteArray?
 
-    class Apk(id: Int, val info: ApkInfo) : QueueItem(id) {
+    /** Installable items: a plain APK or a split package. */
+    sealed class Installable(id: Int) : QueueItem(id) {
         @Volatile
         var uninstallFirst = false
+        abstract override val packageName: String
+        abstract val versionName: String
+        abstract val versionCode: Long
+        abstract val fileName: String
+    }
+
+    class Apk(id: Int, val info: ApkInfo) : Installable(id) {
         override val title: String get() = info.label
         override val subtitle: String get() = "${info.packageName} · ${info.versionName} (${info.versionCode}) · ${formatBytes(info.size)}"
         override val packageName: String get() = info.packageName
+        override val versionName: String get() = info.versionName
+        override val versionCode: Long get() = info.versionCode
+        override val fileName: String get() = info.file.name
         override val totalBytes: Long get() = info.size
         override val icon: ByteArray? get() = info.icon
+    }
+
+    class Bundle(id: Int, val bundle: SplitBundle) : Installable(id) {
+        override val title: String get() = bundle.label
+        override val subtitle: String
+            get() = "${bundle.format} · ${bundle.packageName} · ${bundle.versionName} (${bundle.versionCode}) · base + ${bundle.splits.size} split(s)" +
+                (if (bundle.obbs.isNotEmpty()) " · ${bundle.obbs.size} OBB" else "") + " · ${formatBytes(bundle.totalBytes)}"
+        override val packageName: String get() = bundle.packageName
+        override val versionName: String get() = bundle.versionName
+        override val versionCode: Long get() = bundle.versionCode
+        override val fileName: String get() = bundle.file.name
+        override val totalBytes: Long get() = bundle.totalBytes
+        override val icon: ByteArray? get() = bundle.icon
     }
 
     class Cache(id: Int, initial: CachePlan) : QueueItem(id) {
@@ -62,7 +88,7 @@ sealed class QueueItem(val id: Int) {
         override val title: String get() = plan.root.name
         override val subtitle: String
             get() = "${plan.kind.label} · ${plan.files.size} file(s) · ${formatBytes(plan.totalBytes)} → " +
-                (plan.packageName?.let { plan.remoteRoot(it) } ?: "choose target")
+                (if (!plan.needsPackage) plan.remoteRoot("") else plan.packageName?.let { plan.remoteRoot(it) } ?: "choose target")
         override val packageName: String? get() = plan.packageName
         override val totalBytes: Long get() = plan.totalBytes
         override val icon: ByteArray? get() = null
@@ -71,6 +97,22 @@ sealed class QueueItem(val id: Int) {
             plan = plan.copy(packageName = packageName, kind = kind, confident = true)
             state = ItemState.Queued
         }
+    }
+
+    class Uninstall(id: Int, override val packageName: String, val label: String) : QueueItem(id) {
+        override val title: String get() = "Uninstall $label"
+        override val subtitle: String get() = "$packageName · app data is removed, /sdcard/Android folders are kept"
+        override val totalBytes: Long get() = 0
+        override val icon: ByteArray? get() = null
+    }
+
+    /** Removes a cache: a whole package folder under /sdcard/Android/{obb,data}, or listed files. */
+    class RemoveCache(id: Int, val label: String, val root: String?, val files: List<String>) : QueueItem(id) {
+        override val title: String get() = "Remove cache $label"
+        override val subtitle: String get() = root ?: "${files.size} file(s) under ${files.firstOrNull()?.substringBeforeLast('/') ?: "/sdcard"}"
+        override val packageName: String? get() = null
+        override val totalBytes: Long get() = 0
+        override val icon: ByteArray? get() = null
     }
 }
 
@@ -102,9 +144,31 @@ class InstallQueue(
 
     val isBusy: Boolean get() = current != null
 
-    fun add(apks: List<ApkInfo>, caches: List<CachePlan>) {
+    fun add(apks: List<ApkInfo>, bundles: List<SplitBundle>, caches: List<CachePlan>) {
         apks.forEach { items += QueueItem.Apk(nextId++, it) }
+        bundles.forEach { items += QueueItem.Bundle(nextId++, it) }
         caches.forEach { items += QueueItem.Cache(nextId++, it) }
+        ensureWorker()
+    }
+
+    fun addUninstall(packageName: String, label: String) {
+        items += QueueItem.Uninstall(nextId++, packageName, label)
+        ensureWorker()
+    }
+
+    fun addRemoveCache(item: QueueItem.Cache) {
+        val plan = item.plan
+        val packageName = plan.packageName ?: ""
+        val removal = when (plan.kind) {
+            CacheKind.OBB, CacheKind.DATA -> QueueItem.RemoveCache(nextId++, item.title, plan.remoteRoot(packageName), emptyList())
+            else -> QueueItem.RemoveCache(nextId++, item.title, null, plan.files.map { plan.remotePath(packageName, it) })
+        }
+        items += removal
+        ensureWorker()
+    }
+
+    fun addRemoveBundleObbs(item: QueueItem.Bundle) {
+        items += QueueItem.RemoveCache(nextId++, "${item.title} OBB", null, item.bundle.obbs.map { it.remotePath })
         ensureWorker()
     }
 
@@ -123,7 +187,7 @@ class InstallQueue(
         }
     }
 
-    fun uninstallAndRetry(item: QueueItem.Apk) {
+    fun uninstallAndRetry(item: QueueItem.Installable) {
         item.uninstallFirst = true
         retry(item)
     }
@@ -152,7 +216,10 @@ class InstallQueue(
             try {
                 when (next) {
                     is QueueItem.Apk -> installApk(next, serial)
+                    is QueueItem.Bundle -> installBundle(next, serial)
                     is QueueItem.Cache -> pushCache(next, serial)
+                    is QueueItem.Uninstall -> uninstall(next, serial)
+                    is QueueItem.RemoveCache -> removeCache(next, serial)
                 }
             } catch (e: CancellationException) {
                 next.state = ItemState.Cancelled
@@ -175,9 +242,9 @@ class InstallQueue(
         }
     }
 
-    private fun installApk(item: QueueItem.Apk, serial: String) {
-        val installer = ApkInstaller(client)
-        val packageName = item.info.packageName
+    /** Uninstall-first handling, installed-version check and flags shared by APKs and bundles. */
+    private fun prepareInstall(item: QueueItem.Installable, serial: String, installer: ApkInstaller): Pair<InstalledPackage?, InstallFlags>? {
+        val packageName = item.packageName
         if (item.uninstallFirst) {
             item.state = ItemState.Working("Uninstalling the previous version…")
             val removed = installer.uninstall(serial, packageName)
@@ -185,7 +252,7 @@ class InstallQueue(
             item.uninstallFirst = false
             if (installer.installed(serial, packageName) != null) {
                 item.state = ItemState.Failed("Could not uninstall the previous version: ${removed.message}")
-                return
+                return null
             }
         }
         item.state = ItemState.Working("Checking the installed version…")
@@ -194,15 +261,35 @@ class InstallQueue(
         var flags = InstallFlags(configured.reinstall, configured.allowDowngrade, configured.grantPermissions)
         item.note = when {
             installed == null -> null
-            installed.versionCode != null && installed.versionCode > item.info.versionCode -> {
+            installed.versionCode != null && installed.versionCode > item.versionCode -> {
                 flags = InstallFlags(flags.reinstall, true, flags.grantPermissions)
                 "Installed ${installed.versionName ?: "?"} (${installed.versionCode}) is newer: this is a downgrade."
             }
             else -> "Updating installed ${installed.versionName ?: "?"} (${installed.versionCode ?: "?"})."
         }
         DeviceQueries.freeSpace(client, serial)?.let { free ->
-            if (free < item.info.size * 2) item.note = listOfNotNull(item.note, "Low free space: ${formatBytes(free)}.").joinToString(" ")
+            if (free < item.totalBytes * 2) item.note = listOfNotNull(item.note, "Low free space: ${formatBytes(free)}.").joinToString(" ")
         }
+        return installed to flags
+    }
+
+    private fun finishInstall(item: QueueItem.Installable, installed: InstalledPackage?, result: InstallResult, extra: String = "") {
+        if (result.success) {
+            val replaced = installed?.versionName?.let { " (replaced $it)" } ?: ""
+            item.state = ItemState.Done("Installed ${item.versionName}$replaced$extra")
+            listener.log("${item.packageName} installed: ${item.versionName} (${item.versionCode})$extra")
+            listener.notify("Installed", "${item.title} ${item.versionName}", true)
+        } else {
+            val friendly = friendlyError(result.message)
+            item.state = ItemState.Failed(friendly, offerUninstall = result.needsUninstall)
+            listener.log("${item.packageName} install failed: ${result.message}")
+            listener.notify("Install failed", "${item.title}: $friendly", false)
+        }
+    }
+
+    private fun installApk(item: QueueItem.Apk, serial: String) {
+        val installer = ApkInstaller(client)
+        val (installed, flags) = prepareInstall(item, serial, installer) ?: return
         val total = item.totalBytes
         val meter = SpeedMeter()
         item.state = ItemState.Uploading(0, total, 0.0)
@@ -214,22 +301,48 @@ class InstallQueue(
             item.state = ItemState.Cancelled
             return
         }
-        if (result.success) {
-            val replaced = installed?.versionName?.let { " (replaced $it)" } ?: ""
-            item.state = ItemState.Done("Installed ${item.info.versionName}$replaced")
-            listener.log("$packageName installed: ${item.info.versionName} (${item.info.versionCode})")
-            listener.notify("Installed", "${item.title} ${item.info.versionName}", true)
-        } else {
-            val friendly = friendlyError(result.message)
-            item.state = ItemState.Failed(friendly, offerUninstall = result.needsUninstall)
-            listener.log("$packageName install failed: ${result.message}")
-            listener.notify("Install failed", "${item.title}: $friendly", false)
+        finishInstall(item, installed, result)
+    }
+
+    private fun installBundle(item: QueueItem.Bundle, serial: String) {
+        val installer = ApkInstaller(client)
+        val (installed, flags) = prepareInstall(item, serial, installer) ?: return
+        val bundle = item.bundle
+        val bundleInstaller = BundleInstaller(client)
+        val abis = bundleInstaller.deviceAbis(serial)
+        val apkTotal = bundle.select(abis).sumOf { it.size }
+        val total = apkTotal + bundle.obbBytes
+        val meter = SpeedMeter()
+        item.state = ItemState.Uploading(0, total, 0.0)
+        val result = bundleInstaller.install(serial, bundle, flags, abis, onConnection = { activeConnection = it }, log = { listener.log("${item.title}: $it") }) { sent ->
+            if (sent >= apkTotal && bundle.obbs.isEmpty()) item.state = ItemState.Working("Installing on the headset…")
+            else if (meter.shouldPublish()) item.state = ItemState.Uploading(sent, total, meter.rate(sent))
         }
+        if (cancelRequested) {
+            item.state = ItemState.Cancelled
+            return
+        }
+        if (!result.success || bundle.obbs.isEmpty()) {
+            finishInstall(item, installed, result)
+            return
+        }
+        val verify = verifyMode()
+        val pusher = CachePusher(client) { listener.log("${item.title}: $it") }
+        val pushed = pusher.pushBundleObbs(serial, bundle, verify, onConnection = { activeConnection = it }) { done ->
+            val sent = apkTotal + done
+            if (sent >= total) item.state = ItemState.Working(if (verify != VerifyMode.NONE) "Verifying OBB…" else "Finishing…")
+            else if (meter.shouldPublish()) item.state = ItemState.Uploading(sent, total, meter.rate(sent))
+        }
+        if (cancelRequested) {
+            item.state = ItemState.Cancelled
+            return
+        }
+        finishInstall(item, installed, result, " + ${pushed.copied + pushed.skipped} OBB file(s)")
     }
 
     private fun pushCache(item: QueueItem.Cache, serial: String) {
         val plan = item.plan
-        val packageName = plan.packageName
+        val packageName = plan.packageName ?: if (plan.needsPackage) null else ""
         if (!plan.confident || packageName == null) {
             item.state = ItemState.NeedsInput
             listener.needsInput(item)
@@ -237,11 +350,11 @@ class InstallQueue(
         }
         val total = plan.totalBytes
         val meter = SpeedMeter()
-        val verify = settings().verifyAfterPush
+        val verify = verifyMode()
         item.state = ItemState.Uploading(0, total, 0.0)
         val pusher = CachePusher(client) { listener.log("${item.title}: $it") }
         val result = pusher.push(serial, plan, packageName, verify, onConnection = { activeConnection = it }) { done ->
-            if (done >= total) item.state = ItemState.Working(if (verify) "Verifying…" else "Finishing…")
+            if (done >= total) item.state = ItemState.Working(if (verify == VerifyMode.MD5) "Verifying (MD5)…" else if (verify == VerifyMode.SIZE) "Verifying…" else "Finishing…")
             else if (meter.shouldPublish()) item.state = ItemState.Uploading(done, total, meter.rate(done))
         }
         if (cancelRequested) {
@@ -253,7 +366,57 @@ class InstallQueue(
         listener.notify("Cache copied", "${item.title} → ${result.remoteRoot}", true)
     }
 
+    private fun uninstall(item: QueueItem.Uninstall, serial: String) {
+        val installer = ApkInstaller(client)
+        item.state = ItemState.Working("Uninstalling…")
+        val result = installer.uninstall(serial, item.packageName)
+        if (installer.installed(serial, item.packageName) == null) {
+            item.state = ItemState.Done("Uninstalled ${item.packageName}")
+            listener.log("${item.packageName} uninstalled")
+            listener.notify("Uninstalled", item.label, true)
+        } else {
+            item.state = ItemState.Failed(friendlyError(result.message))
+            listener.log("${item.packageName} uninstall failed: ${result.message}")
+            listener.notify("Uninstall failed", "${item.label}: ${result.message}", false)
+        }
+    }
+
+    private fun removeCache(item: QueueItem.RemoveCache, serial: String) {
+        item.state = ItemState.Working("Removing…")
+        val root = item.root
+        if (root != null) {
+            require(PACKAGE_DIR.matches(root)) { "Refusing to remove $root: not a package folder under /sdcard/Android." }
+            val result = client.shell(serial, "rm -rf ${AdbClient.quote(root)}")
+            if (client.shell(serial, "ls ${AdbClient.quote(root)}").ok) throw AdbException("Could not remove $root: ${result.output}")
+            item.state = ItemState.Done("Removed $root")
+        } else {
+            val files = item.files.filter { it.startsWith("/sdcard/") && it.split('/').none { part -> part == ".." } }
+            require(files.size == item.files.size) { "Refusing to remove paths outside /sdcard." }
+            for (batch in files.chunked(40)) {
+                val result = client.shell(serial, "rm -f " + batch.joinToString(" ") { AdbClient.quote(it) })
+                if (!result.ok) throw AdbException("Could not remove files: ${result.output}")
+            }
+            files.map { it.substringBeforeLast('/') }.distinct().sortedByDescending { it.length }.forEach { dir ->
+                if (PACKAGE_DIR.matches(dir)) client.shell(serial, "rmdir ${AdbClient.quote(dir)} 2>/dev/null")
+            }
+            item.state = ItemState.Done("Removed ${files.size} file(s)")
+        }
+        listener.log("Removed cache: ${item.subtitle}")
+        listener.notify("Cache removed", item.label, true)
+    }
+
+    private fun verifyMode(): VerifyMode {
+        val configured = settings()
+        return when {
+            configured.verifyMd5 -> VerifyMode.MD5
+            configured.verifyAfterPush -> VerifyMode.SIZE
+            else -> VerifyMode.NONE
+        }
+    }
+
     companion object {
+        private val PACKAGE_DIR = Regex("^/sdcard/Android/(obb|data)/[A-Za-z][A-Za-z0-9_.]*$")
+
         private val EXPLANATIONS = listOf(
             "INSTALL_FAILED_UPDATE_INCOMPATIBLE" to "The APK is signed with a different key than the installed app. Uninstall the installed app first (its data is removed).",
             "INSTALL_FAILED_VERSION_DOWNGRADE" to "The installed version is newer. Uninstall it first to install this older APK.",
@@ -267,7 +430,8 @@ class InstallQueue(
             "INSTALL_FAILED_TEST_ONLY" to "The APK is marked test-only.",
             "INSTALL_PARSE_FAILED" to "The APK is damaged or is not a valid Android package.",
             "INSTALL_FAILED_INVALID_APK" to "The APK is damaged or is not a valid Android package.",
-            "INSTALL_FAILED_MISSING_SPLIT" to "This APK needs additional split APKs; split packages are not supported yet.",
+            "INSTALL_FAILED_MISSING_SPLIT" to "This package needs additional split APKs that are not in the bundle.",
+            "INSTALL_FAILED_BAD_SIGNATURE" to "The split APKs are not all signed with the same key.",
         )
 
         fun friendlyError(message: String): String {

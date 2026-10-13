@@ -3,8 +3,10 @@ package apkuploader.adb
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 
 class RemoteStat(val mode: Int, val size: Long, val mtimeSeconds: Long) {
     val exists: Boolean get() = mode != 0
@@ -36,26 +38,31 @@ class SyncSession(private val connection: AdbConnection) : Closeable {
         }
     }
 
+    /** Uploads [local] to [remotePath]; see the stream overload. */
+    fun send(local: File, remotePath: String, digest: MessageDigest? = null, progress: (Long) -> Unit) {
+        local.inputStream().use { send(it, local.lastModified() / 1000, remotePath, digest, progress) }
+    }
+
     /**
-     * Uploads [local] to [remotePath]. [progress] receives the running byte count.
-     * Missing parent directories are created by the device. Throws [AdbException] on FAIL.
+     * Uploads [input] to [remotePath]. [progress] receives the running byte count and [digest],
+     * when given, is updated with every byte sent. Missing parent directories are created by the
+     * device. Throws [AdbException] on FAIL.
      */
-    fun send(local: File, remotePath: String, progress: (Long) -> Unit) {
+    fun send(input: InputStream, mtimeSeconds: Long, remotePath: String, digest: MessageDigest? = null, progress: (Long) -> Unit) {
         val mode = 0x8000 or 0b110100100 // regular file, 0644
         sendRequest("SEND", "$remotePath,$mode".toByteArray(Charsets.UTF_8))
         val buffer = ByteArray(CHUNK)
         var sent = 0L
-        local.inputStream().use { input ->
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                writeHeader("DATA", read)
-                connection.write(buffer, 0, read)
-                sent += read
-                progress(sent)
-            }
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            writeHeader("DATA", read)
+            connection.write(buffer, 0, read)
+            digest?.update(buffer, 0, read)
+            sent += read
+            progress(sent)
         }
-        writeHeader("DONE", (local.lastModified() / 1000).toInt())
+        writeHeader("DONE", mtimeSeconds.toInt())
         connection.flush()
         readResult()
     }

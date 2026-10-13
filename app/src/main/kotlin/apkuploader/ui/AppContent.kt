@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,7 +52,10 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
         var showUpdates by remember { mutableStateOf(false) }
         var showConnect by remember { mutableStateOf(false) }
         var showSettings by remember { mutableStateOf(false) }
-        var uninstallTarget by remember { mutableStateOf<QueueItem.Apk?>(null) }
+        var uninstallTarget by remember { mutableStateOf<QueueItem.Installable?>(null) }
+        var uninstallAndRetryTarget by remember { mutableStateOf<QueueItem.Installable?>(null) }
+        var removeCacheTarget by remember { mutableStateOf<QueueItem?>(null) }
+        val showLog = model.settings.value.showLog
 
         LaunchedEffect(updates) { updates.check() }
         LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
@@ -72,6 +76,9 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
                     actions = {
                         DeviceChip(model) { showConnect = true }
                         Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = { model.settings.update { copy(showLog = !showLog) } }) {
+                            Icon(Icons.Default.Description, contentDescription = "Log", tint = if (showLog) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { showSettings = true }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }
@@ -91,16 +98,18 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
         ) { padding ->
             Column(Modifier.padding(padding).fillMaxSize()) {
                 if (model.queue.items.isEmpty()) {
-                    DropCard(onAddFiles = pickFiles, onAddFolder = pickFolder, modifier = Modifier.fillMaxSize())
+                    DropCard(onAddFiles = pickFiles, onAddFolder = pickFolder, modifier = Modifier.weight(1f).fillMaxWidth())
                 } else {
                     DropStrip(onAddFiles = pickFiles, onAddFolder = pickFolder)
                     QueueList(
                         model = model,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
-                        onUninstallAndRetry = { uninstallTarget = it },
+                        onUninstallAndRetry = { uninstallAndRetryTarget = it },
+                        onUninstall = { uninstallTarget = it },
+                        onRemoveCache = { removeCacheTarget = it },
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp, 4.dp, 16.dp, 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp, 4.dp, 16.dp, 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -117,6 +126,7 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
                         }
                     }
                 }
+                if (showLog) LogPanel(model) { model.settings.update { copy(showLog = false) } }
             }
         }
 
@@ -139,17 +149,52 @@ fun AppContent(model: AppModel, updater: AppUpdater, pickFiles: () -> Unit, pick
             )
         }
 
-        uninstallTarget?.let { item ->
+        uninstallAndRetryTarget?.let { item ->
             ConfirmDialog(
                 title = "Uninstall ${item.title}?",
-                text = "${item.info.packageName} will be removed from the headset together with its data and settings, " +
-                    "then ${item.info.file.name} will be installed. OBB and data folders under /sdcard/Android are not deleted.",
+                text = "${item.packageName} will be removed from the headset together with its data and settings, " +
+                    "then ${item.fileName} will be installed. OBB and data folders under /sdcard/Android are not deleted.",
                 confirmLabel = "Uninstall and install",
                 onConfirm = {
                     model.queue.uninstallAndRetry(item)
+                    uninstallAndRetryTarget = null
+                },
+                onDismiss = { uninstallAndRetryTarget = null },
+            )
+        }
+
+        uninstallTarget?.let { item ->
+            ConfirmDialog(
+                title = "Uninstall ${item.title}?",
+                text = "${item.packageName} will be removed from the headset together with its data and settings. " +
+                    "OBB and data folders under /sdcard/Android are kept; use \"Remove cache\" for those.",
+                confirmLabel = "Uninstall",
+                onConfirm = {
+                    model.uninstall(item)
                     uninstallTarget = null
                 },
                 onDismiss = { uninstallTarget = null },
+            )
+        }
+
+        removeCacheTarget?.let { item ->
+            val description = when (item) {
+                is QueueItem.Cache -> item.plan.let { plan ->
+                    if (plan.kind.name == "OBB" || plan.kind.name == "DATA") "The folder ${plan.remoteRoot(plan.packageName ?: "")} will be deleted from the headset."
+                    else "${plan.files.size} file(s) copied from ${item.title} will be deleted from the headset."
+                }
+                is QueueItem.Bundle -> "${item.bundle.obbs.size} OBB file(s) of ${item.packageName} will be deleted from the headset."
+                else -> ""
+            }
+            ConfirmDialog(
+                title = "Remove cache of ${item.title}?",
+                text = "$description The installed app is kept.",
+                confirmLabel = "Remove cache",
+                onConfirm = {
+                    model.removeCache(item)
+                    removeCacheTarget = null
+                },
+                onDismiss = { removeCacheTarget = null },
             )
         }
 

@@ -88,7 +88,7 @@ fun CacheTargetDialog(item: QueueItem.Cache, onConfirm: (String, CacheKind) -> U
                     }
                 }
                 Text(
-                    "Files: " + plan.files.take(4).joinToString(", ") { it.relativePath } + if (plan.files.size > 4) ", …" else "",
+                    "Files: " + plan.files.take(4).joinToString(", ") { it.relativePath } + (if (plan.files.size > 4) ", …" else ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

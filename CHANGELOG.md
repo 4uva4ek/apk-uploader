@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 — 2026-10-14
+
+- Split packages: XAPK, APKS and APKM are installed through one package-manager session
+  (`install-create` / `install-write` / `install-commit`); splits for other ABIs are skipped and
+  XAPK OBB expansions are copied straight from the archive.
+- **Uninstall** and **Remove cache** actions on queue items, with confirmation.
+- Rookie `install.txt`: `adb push` lines define the destinations; every other line is shown and ignored.
+- Optional MD5 verification of copied caches (device `md5sum` against hashes computed while uploading).
+- Log panel in the window with copy and "open log folder".
+- Smaller package: the bundled Java runtime contains only the required modules.
+- Update checks and installs are written to the session log.
+
 ## 0.1.0 — 2026-10-14
 
 - Portable Windows application (Compose Desktop, bundled Java 21 and Android platform-tools adb).

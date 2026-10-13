@@ -7,3 +7,4 @@ local.properties
 *.apk
 *.obb
 *.log
+!app/src/test/resources/*.apk

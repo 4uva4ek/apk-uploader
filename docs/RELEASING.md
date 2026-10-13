@@ -29,6 +29,13 @@ SHA-256). The `fetchPlatformTools` task downloads the archive, verifies it and s
 `source.properties` into `app/build/platform-tools/windows`, which Compose packages as
 `app/resources`. To update adb, change the three values together and rebuild.
 
+## Runtime modules
+
+The bundled Java runtime is built by jlink from an explicit module list in `app/build.gradle.kts`
+(`java.instrument`, `jdk.unsupported`, `jdk.crypto.ec` on top of the Compose defaults). After
+adding a dependency, run `./gradlew :app:suggestRuntimeModules` and add what it reports; a
+missing module shows up as a `ClassNotFoundException` only in the packaged app, not in `run`.
+
 ## Device check
 
 `DeviceIntegrationTest` installs an APK and a synthetic OBB cache on a connected device, verifies
@@ -36,7 +43,10 @@ them and removes both. It runs only when `APK_UPLOADER_TEST_APK` points to an AP
 is not installed yet:
 
 ```sh
-APK_UPLOADER_TEST_APK=path/to/app.apk ./gradlew :app:test --tests apkuploader.DeviceIntegrationTest -i
+python -I tools/make_test_apk.py build/testapk 24   # harmless test APK and XAPK (needs the Android SDK)
+APK_UPLOADER_TEST_APK=build/testapk/apk-uploader-testapp.apk \
+APK_UPLOADER_TEST_XAPK=build/testapk/apk-uploader-testapp.xapk \
+./gradlew :app:test --tests apkuploader.DeviceIntegrationTest -i
 ```
 
 ## Local build

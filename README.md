@@ -12,16 +12,23 @@ and run `ApkUploader.exe`. Java and adb are included; nothing else needs to be i
    accept the debugging prompt. The headset appears in the top bar. For Wi-Fi, open **Connect**
    and enter the address (`ip:port`), pair with a wireless-debugging code, or switch the
    USB-connected headset to Wi-Fi.
-2. Drop APK files and cache folders into the window (or use **Add APK files** / **Add cache
-   folder**). Several items can be dropped at once; they are processed one after another.
+2. Drop APK, XAPK, APKS or APKM files and cache folders into the window (or use **Add APK
+   files** / **Add cache folder**). Several items can be dropped at once; they are processed one
+   after another. Split packages are installed in one package-manager session; splits for other
+   CPU architectures are skipped and OBB files inside an XAPK are copied as well.
 3. Watch the queue: upload progress and speed, installation, and the result. Failed items show
    the package manager's reason and can be retried. When the installed app has a different
    signature or a newer version, **Uninstall and retry** removes it first (its data is lost).
+   **Uninstall** and **Remove cache** on an item remove the app or its copied files from the
+   headset after confirmation.
 
 Cache folders are recognised by their layout ([details](docs/CACHE-LAYOUT.md)):
 `*.obb` files go to `/sdcard/Android/obb/<package>/`, a folder named like a package goes to
-`/sdcard/Android/data/<package>/`, an unpacked `Android/` folder is mirrored, and unknown
+`/sdcard/Android/data/<package>/`, an unpacked `Android/` folder is mirrored, a Rookie-style
+`install.txt` decides through its `adb push` lines (nothing else in it is executed), and unknown
 layouts ask for the target. APKs dropped together with their cache are installed first.
+Copied files are size-checked; MD5 verification can be enabled in Settings. The log panel
+(document icon in the top bar) shows what happened.
 
 **Updates** checks GitHub releases on start; a newer version is downloaded, verified by size
 and SHA-256, and installed in place with a backup of the previous version kept beside the app.

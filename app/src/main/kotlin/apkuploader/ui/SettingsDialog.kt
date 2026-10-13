@@ -33,6 +33,7 @@ fun SettingsDialog(model: AppModel, onDismiss: () -> Unit) {
                 SettingSwitch("Grant all runtime permissions on install (-g)", settings.grantPermissions) { v -> model.settings.update { copy(grantPermissions = v) } }
                 Text("Cache", style = MaterialTheme.typography.titleSmall)
                 SettingSwitch("Verify file sizes on the headset after copying", settings.verifyAfterPush) { v -> model.settings.update { copy(verifyAfterPush = v) } }
+                SettingSwitch("Verify MD5 checksums instead (slower for large caches)", settings.verifyMd5) { v -> model.settings.update { copy(verifyMd5 = v) } }
                 Text("Notifications", style = MaterialTheme.typography.titleSmall)
                 SettingSwitch("Show system notifications", settings.notifications) { v -> model.settings.update { copy(notifications = v) } }
                 Text("adb", style = MaterialTheme.typography.titleSmall)

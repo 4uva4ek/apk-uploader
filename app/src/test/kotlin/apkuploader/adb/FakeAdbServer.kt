@@ -16,15 +16,19 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
-/** Minimal adb server emulation: host services, shell v2, exec install and sync on a local directory. */
+/** Minimal adb server emulation: host services, shell v2, exec install (single and session) and sync on a local directory. */
 class FakeAdbServer(private val root: File) : Closeable {
     private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     val port: Int get() = server.localPort
     val requests = CopyOnWriteArrayList<String>()
     val shellHandlers = mutableMapOf<String, Pair<String, Int>>()
+
+    /** Consulted for shell commands without an exact handler; return null for "command not found". */
+    var shellFallback: ((String) -> Pair<String, Int>?)? = null
     var devicesText = "EMU123\tdevice product:fake model:Fake_Device device:fake transport_id:1\n"
     val installedBytes = AtomicLong()
     var installCommand: String? = null
+    val sessionWrites = CopyOnWriteArrayList<Pair<String, Long>>()
 
     init {
         thread(isDaemon = true) {
@@ -76,7 +80,8 @@ class FakeAdbServer(private val root: File) : Closeable {
         when {
             request.startsWith("shell,v2,raw:") -> {
                 val command = request.removePrefix("shell,v2,raw:")
-                val (stdout, exit) = shellHandlers[command] ?: ("sh: ${command.substringBefore(' ')}: not found\n" to 127)
+                val (stdout, exit) = shellHandlers[command] ?: shellFallback?.invoke(command)
+                    ?: ("sh: ${command.substringBefore(' ')}: not found\n" to 127)
                 okay()
                 writeFrame(output, 1, stdout.toByteArray())
                 writeFrame(output, 3, byteArrayOf(exit.toByte()))
@@ -84,7 +89,6 @@ class FakeAdbServer(private val root: File) : Closeable {
             }
             request.startsWith("exec:") -> {
                 val command = request.removePrefix("exec:")
-                installCommand = command
                 val size = Regex("-S (\\d+)").find(command)!!.groupValues[1].toLong()
                 okay()
                 var count = 0L
@@ -94,8 +98,14 @@ class FakeAdbServer(private val root: File) : Closeable {
                     if (read < 0) break
                     count += read
                 }
-                installedBytes.set(count)
-                output.write((if (count == size) "Success\n" else "Failure [INSTALL_FAILED_INVALID_APK: short read]\n").toByteArray())
+                if (command.contains("install-write")) {
+                    sessionWrites += command.substringAfter("$size ").split(' ')[1] to count
+                    output.write("Success: Streamed $count bytes\n".toByteArray())
+                } else {
+                    installCommand = command
+                    installedBytes.set(count)
+                    output.write((if (count == size) "Success\n" else "Failure [INSTALL_FAILED_INVALID_APK: short read]\n").toByteArray())
+                }
                 output.flush()
             }
             request == "sync:" -> {
@@ -155,7 +165,7 @@ class FakeAdbServer(private val root: File) : Closeable {
         }
     }
 
-    private fun localFile(remotePath: String): File = File(root, remotePath.trimStart('/').replace('/', File.separatorChar))
+    fun localFile(remotePath: String): File = File(root, remotePath.trimStart('/').replace('/', File.separatorChar))
 
     private fun readRequest(input: InputStream): String {
         val length = String(readExact(input, 4), Charsets.US_ASCII).toInt(16)

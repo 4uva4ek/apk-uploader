@@ -6,9 +6,11 @@ enum class CacheKind(val label: String, val remoteRoot: String) {
     OBB("OBB cache", "/sdcard/Android/obb"),
     DATA("Data cache", "/sdcard/Android/data"),
     MIRROR("Android folder", "/sdcard/Android"),
+    CUSTOM("install.txt", "/sdcard"),
 }
 
-class CacheFile(val local: File, val relativePath: String) {
+/** A local file and its path relative to the plan root; [remote] overrides the computed destination. */
+class CacheFile(val local: File, val relativePath: String, val remote: String? = null) {
     val size: Long get() = local.length()
 }
 
@@ -26,26 +28,55 @@ data class CachePlan(
 ) {
     val totalBytes: Long = files.sumOf { it.size }
 
+    /** The plan needs no package name when every file carries its own destination. */
+    val needsPackage: Boolean get() = kind != CacheKind.CUSTOM
+
     fun remoteRoot(packageName: String): String = when (kind) {
         CacheKind.MIRROR -> CacheKind.MIRROR.remoteRoot
+        CacheKind.CUSTOM -> commonRemoteRoot()
         else -> "${kind.remoteRoot}/$packageName"
     }
 
-    fun remotePath(packageName: String, file: CacheFile): String = remoteRoot(packageName) + "/" + file.relativePath
+    fun remotePath(packageName: String, file: CacheFile): String = file.remote ?: (remoteRoot(packageName) + "/" + file.relativePath)
+
+    private fun commonRemoteRoot(): String {
+        val parents = files.mapNotNull { it.remote?.substringBeforeLast('/') }
+        if (parents.isEmpty()) return CacheKind.CUSTOM.remoteRoot
+        var prefix = parents.first().split('/')
+        for (parent in parents.drop(1)) {
+            val parts = parent.split('/')
+            prefix = prefix.zip(parts).takeWhile { it.first == it.second }.map { it.first }
+        }
+        return prefix.joinToString("/").ifEmpty { "/" }.let { if (it.length < "/sdcard".length) "/sdcard" else it }
+    }
 }
 
 /** Detection rules for cache folders (documented in docs/CACHE-LAYOUT.md). */
 object CacheLayout {
     private val packagePattern = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
     private val obbPattern = Regex("^(main|patch)\\.\\d+\\.(.+)\\.obb$", RegexOption.IGNORE_CASE)
+    private val remotePackagePattern = Regex("^/sdcard/Android/(?:obb|data)/([^/]+)")
     private val junk = setOf("thumbs.db", "desktop.ini", ".ds_store", "install.txt")
 
     fun looksLikePackage(name: String): Boolean = packagePattern.matches(name)
 
     fun analyze(folder: File, packageHints: List<String>): List<CachePlan> {
         val notes = mutableListOf<String>()
-        if (File(folder, "install.txt").isFile) notes += "install.txt found; its commands are shown only, never executed."
         val hint = packageHints.distinct().singleOrNull()
+
+        // 0. install.txt with push commands: explicit destinations.
+        val script = File(folder, "install.txt")
+        if (script.isFile) {
+            val planned = InstallScript.plan(folder, InstallScript.parse(script.readText()))
+            if (planned.files.isNotEmpty()) {
+                val packageName = planned.files.firstNotNullOfOrNull { file ->
+                    file.remote?.let { remotePackagePattern.find(it)?.groupValues?.get(1) }?.takeIf(::looksLikePackage)
+                } ?: hint
+                return listOf(CachePlan(folder, CacheKind.CUSTOM, packageName, true, planned.files, planned.notes))
+            }
+            notes += "install.txt has no usable push commands; the layout was detected from the folder instead."
+            notes += planned.notes
+        }
 
         // 1. An unpacked archive with Android/obb or Android/data inside, or the Android folder itself.
         val android = when {

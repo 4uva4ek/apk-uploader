@@ -3,6 +3,7 @@ package apkuploader.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -40,16 +43,28 @@ import apkuploader.install.QueueItem
 import org.jetbrains.skia.Image
 
 @Composable
-fun QueueList(model: AppModel, modifier: Modifier = Modifier, onUninstallAndRetry: (QueueItem.Apk) -> Unit) {
-    LazyColumn(modifier = modifier, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+fun QueueList(
+    model: AppModel,
+    modifier: Modifier = Modifier,
+    onUninstallAndRetry: (QueueItem.Installable) -> Unit,
+    onUninstall: (QueueItem.Installable) -> Unit,
+    onRemoveCache: (QueueItem) -> Unit,
+) {
+    LazyColumn(modifier = modifier, contentPadding = PaddingValues(16.dp, 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(model.queue.items, key = { it.id }) { item ->
-            ItemCard(item, model, onUninstallAndRetry)
+            ItemCard(item, model, onUninstallAndRetry, onUninstall, onRemoveCache)
         }
     }
 }
 
 @Composable
-private fun ItemCard(item: QueueItem, model: AppModel, onUninstallAndRetry: (QueueItem.Apk) -> Unit) {
+private fun ItemCard(
+    item: QueueItem,
+    model: AppModel,
+    onUninstallAndRetry: (QueueItem.Installable) -> Unit,
+    onUninstall: (QueueItem.Installable) -> Unit,
+    onRemoveCache: (QueueItem) -> Unit,
+) {
     val state = item.state
     val isCurrent = model.queue.current === item
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -60,6 +75,11 @@ private fun ItemCard(item: QueueItem, model: AppModel, onUninstallAndRetry: (Que
                 Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(item.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                 item.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = WarningAmber) }
+                if (item is QueueItem.Cache) {
+                    item.plan.notes.take(2).forEach {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 StateLine(state)
                 if (state is ItemState.Uploading) {
@@ -72,11 +92,19 @@ private fun ItemCard(item: QueueItem, model: AppModel, onUninstallAndRetry: (Que
             }
             Spacer(Modifier.size(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (state is ItemState.NeedsInput) {
-                    TextButton(onClick = { model.needsInput(item as QueueItem.Cache) }) { Text("Choose target") }
+                if (state is ItemState.NeedsInput && item is QueueItem.Cache) {
+                    TextButton(onClick = { model.needsInput(item) }) { Text("Choose target") }
                 }
-                if (state is ItemState.Failed && state.offerUninstall && item is QueueItem.Apk) {
+                if (state is ItemState.Failed && state.offerUninstall && item is QueueItem.Installable) {
                     TextButton(onClick = { onUninstallAndRetry(item) }) { Text("Uninstall and retry") }
+                }
+                if (!state.isActive && item is QueueItem.Installable) {
+                    TextButton(onClick = { onUninstall(item) }) { Text("Uninstall") }
+                }
+                val removableCache = (item is QueueItem.Cache && (item.plan.packageName != null || !item.plan.needsPackage)) ||
+                    (item is QueueItem.Bundle && item.bundle.obbs.isNotEmpty())
+                if (!state.isActive && removableCache) {
+                    IconButton(onClick = { onRemoveCache(item) }) { Icon(Icons.Default.DeleteSweep, contentDescription = "Remove cache from the headset") }
                 }
                 if (state.isFinished) {
                     IconButton(onClick = { model.queue.retry(item) }) { Icon(Icons.Default.Refresh, contentDescription = "Retry") }
@@ -84,7 +112,7 @@ private fun ItemCard(item: QueueItem, model: AppModel, onUninstallAndRetry: (Que
                 if (isCurrent && state.isActive) {
                     IconButton(onClick = { model.queue.cancelCurrent() }) { Icon(Icons.Default.Close, contentDescription = "Cancel") }
                 } else if (!isCurrent) {
-                    IconButton(onClick = { model.queue.remove(item) }) { Icon(Icons.Default.Delete, contentDescription = "Remove") }
+                    IconButton(onClick = { model.queue.remove(item) }) { Icon(Icons.Default.Delete, contentDescription = "Remove from the queue") }
                 }
             }
         }
@@ -100,10 +128,15 @@ private fun ItemIcon(item: QueueItem) {
         Image(bitmap, contentDescription = null, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)))
     } else {
         Icon(
-            if (item is QueueItem.Apk) Icons.Default.Android else Icons.Default.Folder,
+            when (item) {
+                is QueueItem.Installable -> Icons.Default.Android
+                is QueueItem.Cache -> Icons.Default.Folder
+                is QueueItem.Uninstall -> Icons.Default.Delete
+                is QueueItem.RemoveCache -> Icons.Default.FolderZip
+            },
             contentDescription = null,
             modifier = Modifier.size(44.dp),
-            tint = MaterialTheme.colorScheme.primary,
+            tint = if (item is QueueItem.Uninstall || item is QueueItem.RemoveCache) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         )
     }
 }

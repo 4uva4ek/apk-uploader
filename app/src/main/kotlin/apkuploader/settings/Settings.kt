@@ -19,7 +19,9 @@ data class Settings(
     val allowDowngrade: Boolean = false,
     val grantPermissions: Boolean = false,
     val verifyAfterPush: Boolean = true,
+    val verifyMd5: Boolean = false,
     val notifications: Boolean = true,
+    val showLog: Boolean = false,
     val adbPath: String = "",
 )
 

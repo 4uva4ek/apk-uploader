@@ -120,8 +120,9 @@ compose.desktop {
         }
 
         nativeDistributions {
-            // Include every runtime module: HTTPS to GitHub, AWT drag and drop, system tray.
-            includeAllModules = true
+            // Runtime modules beyond the Compose defaults: from `suggestRuntimeModules` (jdeps),
+            // plus jdk.crypto.ec so HTTPS to GitHub negotiates EC cipher suites on JDK 21.
+            modules("java.instrument", "jdk.unsupported", "jdk.crypto.ec")
             targetFormats(TargetFormat.Msi)
             packageName = "ApkUploader"
             packageVersion = appVersion

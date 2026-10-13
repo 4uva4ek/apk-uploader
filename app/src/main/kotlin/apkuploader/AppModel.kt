@@ -45,10 +45,19 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
     var errorMessage by mutableStateOf<Pair<String, String>?>(null)
     val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
+    /** Recent log lines for the window's log panel. */
+    val logLines = mutableStateListOf<String>()
+
     /** Set by the window to show system notifications. */
     var notifier: ((title: String, message: String, success: Boolean) -> Unit)? = null
 
     fun start() {
+        AppLog.listener = { line ->
+            scope.launch {
+                logLines += line
+                if (logLines.size > LOG_LIMIT) logLines.removeRange(0, logLines.size - LOG_LIMIT)
+            }
+        }
         AppLog.info("${BuildInfo.APP_NAME} ${BuildInfo.VERSION} starting; data in ${AppDirs.root}")
         session.start()
         scope.launch { session.devices.collect { list -> devices = list; reselect(list) } }
@@ -103,14 +112,28 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
             if (result.errors.isNotEmpty()) {
                 errorMessage = "Some items were skipped" to result.errors.joinToString("\n")
             }
-            if (result.apks.isNotEmpty() || result.caches.isNotEmpty()) {
-                queue.add(result.apks, result.caches)
-                val count = result.apks.size + result.caches.size
-                messages.tryEmit(if (count == 1) "Added 1 item to the queue" else "Added $count items to the queue")
+            if (result.count > 0) {
+                queue.add(result.apks, result.bundles, result.caches)
+                messages.tryEmit(if (result.count == 1) "Added 1 item to the queue" else "Added ${result.count} items to the queue")
                 result.apks.forEach { AppLog.info("Queued APK ${it.file.name}: ${it.packageName} ${it.versionName} (${it.versionCode})") }
+                result.bundles.forEach { AppLog.info("Queued ${it.format} ${it.file.name}: ${it.packageName} ${it.versionName} (${it.versionCode}), ${it.apks.size} APK(s), ${it.obbs.size} OBB") }
                 result.caches.forEach { AppLog.info("Queued cache ${it.root.path}: ${it.kind} ${it.packageName ?: "?"} ${it.files.size} files") }
             }
         }
+    }
+
+    fun uninstall(item: QueueItem.Installable) {
+        AppLog.info("Queued uninstall of ${item.packageName}")
+        queue.addUninstall(item.packageName, item.title)
+    }
+
+    fun removeCache(item: QueueItem) {
+        when (item) {
+            is QueueItem.Cache -> queue.addRemoveCache(item)
+            is QueueItem.Bundle -> queue.addRemoveBundleObbs(item)
+            else -> return
+        }
+        AppLog.info("Queued cache removal for ${item.title}")
     }
 
     suspend fun connectWifi(address: String): String = withContext(Dispatchers.IO) {
@@ -161,5 +184,9 @@ class AppModel(private val scope: CoroutineScope) : QueueListener {
     fun shutdown() {
         queue.cancelCurrent()
         session.shutdown()
+    }
+
+    companion object {
+        const val LOG_LIMIT = 400
     }
 }
