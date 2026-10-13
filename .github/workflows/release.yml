@@ -1,0 +1,61 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Check release version
+        run: python tools/check_release_version.py
+      - name: Build portable Windows application
+        shell: pwsh
+        run: |
+          ./gradlew.bat :app:test :app:createReleaseDistributable --console=plain
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/test_windows_updater.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = ((Get-Content app.properties | Select-String '^version=').Line -split '=', 2)[1].Trim()
+          $appDir = Resolve-Path app/build/compose/binaries/main-release/app/ApkUploader
+          foreach ($file in @('ApkUploader.exe', 'runtime/bin/server/jvm.dll', 'app/ApkUploader.cfg',
+                              'app/resources/adb.exe', 'app/resources/AdbWinApi.dll', 'app/resources/AdbWinUsbApi.dll',
+                              'app/resources/libwinpthread-1.dll', 'app/resources/NOTICE.txt')) {
+            if (!(Test-Path "$appDir/$file")) { throw "Missing $file" }
+          }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path $appDir -DestinationPath "dist/apk-uploader-$version-windows-x64.zip"
+          Get-FileHash -Algorithm SHA256 dist/*.zip | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path -Leaf $_.Path)" } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version=//p' app.properties | tr -d '\r')
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "APK Uploader $version" --notes-file "docs/RELEASE-$version.md" dist/*

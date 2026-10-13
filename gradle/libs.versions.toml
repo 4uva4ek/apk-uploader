@@ -1,0 +1,20 @@
+[versions]
+kotlin = "2.2.21"
+compose-multiplatform = "1.9.3"
+kotlinx-coroutines = "1.10.2"
+kotlinx-serialization = "1.9.0"
+flatlaf = "3.7.2"
+arsclib = "1.4.0"
+
+[libraries]
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+flatlaf = { group = "com.formdev", name = "flatlaf", version.ref = "flatlaf" }
+arsclib = { group = "io.github.reandroid", name = "ARSCLib", version.ref = "arsclib" }
+
+[plugins]
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

@@ -1,0 +1,51 @@
+# Releasing
+
+Workflow: `.github/workflows/release.yml` (**Release**). It builds the portable Windows
+application on `windows-latest`, runs the unit tests and the updater helper tests, checks the
+package contents (launcher, Java runtime, bundled adb) and uploads a ZIP with `SHA256SUMS.txt`.
+A `v*` tag publishes a GitHub release with those files; manual runs only produce artifacts.
+
+## Version and validation
+
+1. Update `version` in `app.properties` and `BuildInfo.VERSION` to the same value.
+2. Add `docs/RELEASE-<version>.md` (used as the release notes) and update `CHANGELOG.md`.
+3. Run `python tools/check_release_version.py` and the focused checks for the changed behaviour:
+   `./gradlew :app:test`, `tools/test_windows_updater.ps1` when the updater changed.
+4. Push `main`, then run **Release** manually and check the artifact: extract the ZIP, run
+   `ApkUploader.exe`, connect the headset, install a test APK and a cache folder.
+5. Create and push the tag `v<version>` at the validated commit. The tag run publishes
+   `apk-uploader-<version>-windows-x64.zip` and `SHA256SUMS.txt`.
+
+Release assets must keep these names: the in-app updater downloads
+`apk-uploader-<version>-windows-x64.zip` from the latest stable release and verifies its
+size and SHA-256 digest from the GitHub API. Do not move published tags or rename assets;
+publish a new version instead. Windows packages are not Authenticode signed.
+
+## Bundled adb
+
+`app/build.gradle.kts` pins the Android SDK Platform-Tools release (version, URL and
+SHA-256). The `fetchPlatformTools` task downloads the archive, verifies it and stages
+`adb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll`, `libwinpthread-1.dll`, `NOTICE.txt` and
+`source.properties` into `app/build/platform-tools/windows`, which Compose packages as
+`app/resources`. To update adb, change the three values together and rebuild.
+
+## Device check
+
+`DeviceIntegrationTest` installs an APK and a synthetic OBB cache on a connected device, verifies
+them and removes both. It runs only when `APK_UPLOADER_TEST_APK` points to an APK whose package
+is not installed yet:
+
+```sh
+APK_UPLOADER_TEST_APK=path/to/app.apk ./gradlew :app:test --tests apkuploader.DeviceIntegrationTest -i
+```
+
+## Local build
+
+Requires JDK 21 (set `JAVA_HOME`), network access for Gradle dependencies and the pinned
+platform-tools download.
+
+```sh
+./gradlew :app:test
+./gradlew :app:createReleaseDistributable   # app/build/compose/binaries/main-release/app/ApkUploader
+./gradlew :app:run                           # development run
+```
