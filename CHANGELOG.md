@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-10-16
 
 - Linux: the desktop entry and notifications reference the icon by absolute path, so KDE Plasma
   shows it in the taskbar right after the first launch instead of a generic icon until re-login.
