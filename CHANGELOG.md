@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Linux: folders opened by the app (the downloaded update, the log folder), notifications and the
+  adb server no longer inherit the jpackage launcher's environment. Before, APK Uploader started
+  from the file manager window that **Updates** opened exited at once with Java's usage text.
+
 ## 0.4.1 — 2026-10-16
 
 - Linux: the desktop entry and notifications reference the icon by absolute path, so KDE Plasma

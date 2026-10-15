@@ -63,10 +63,10 @@ object LinuxDesktopEntry {
     /** Desktop notification through notify-send (libnotify); silently skipped when it is missing. */
     fun notify(title: String, message: String, success: Boolean) {
         try {
-            ProcessBuilder(
+            Platform.external(ProcessBuilder(
                 "notify-send", "--app-name=${BuildInfo.APP_NAME}", "--icon=${iconFile.absolutePath}",
                 "--urgency=${if (success) "normal" else "critical"}", "--", title, message,
-            ).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+            )).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
         } catch (e: Exception) {
             AppLog.warn("Notification not shown: ${e.message}")
         }

@@ -44,7 +44,7 @@ object AdbServer {
     fun start(binary: File) {
         AppDirs.logs.mkdirs()
         val log = File(AppDirs.logs, "adb-server.log")
-        val process = ProcessBuilder(binary.path, "start-server")
+        val process = Platform.external(ProcessBuilder(binary.path, "start-server"))
             .directory(binary.parentFile)
             .redirectErrorStream(true)
             .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
@@ -60,7 +60,7 @@ object AdbServer {
     }
 
     fun binaryVersion(binary: File): String? = try {
-        val process = ProcessBuilder(binary.path, "version").redirectErrorStream(true).start()
+        val process = Platform.external(ProcessBuilder(binary.path, "version")).redirectErrorStream(true).start()
         val text = process.inputStream.bufferedReader().readText()
         process.waitFor(10, TimeUnit.SECONDS)
         Regex("Version ([^\\s]+)").find(text)?.groupValues?.get(1)

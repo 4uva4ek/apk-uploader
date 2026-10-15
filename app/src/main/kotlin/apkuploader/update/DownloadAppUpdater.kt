@@ -6,7 +6,6 @@ import apkuploader.BuildInfo
 import apkuploader.Platform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.awt.Desktop
 import java.io.File
 
 /**
@@ -22,7 +21,7 @@ class DownloadAppUpdater : AppUpdater {
 
     override suspend fun install(file: File, update: AppUpdate): String = withContext(Dispatchers.IO) {
         try {
-            Desktop.getDesktop().open(file.parentFile)
+            Platform.openFolder(file.parentFile)
         } catch (e: Exception) {
             AppLog.warn("Cannot open ${file.parentFile.path}: ${e.message}")
         }

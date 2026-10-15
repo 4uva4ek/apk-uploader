@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import apkuploader.AppDirs
 import apkuploader.AppModel
-import java.awt.Desktop
+import apkuploader.Platform
 
 /** Recent log lines at the bottom of the window. */
 @Composable
@@ -46,7 +46,7 @@ fun LogPanel(model: AppModel, onHide: () -> Unit) {
                 Text("Log", style = MaterialTheme.typography.titleSmall)
                 Row {
                     TextButton(onClick = { clipboard.setText(AnnotatedString(lines.joinToString("\n"))) }) { Text("Copy") }
-                    TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppDirs.logs) } }) { Text("Open log folder") }
+                    TextButton(onClick = { runCatching { Platform.openFolder(AppDirs.logs) } }) { Text("Open log folder") }
                     TextButton(onClick = onHide) { Text("Hide") }
                 }
             }
