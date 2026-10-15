@@ -84,6 +84,9 @@ jobs:
           test -x "$root/ApkUploader.app/Contents/app/resources/adb" || { echo "adb is not executable"; exit 1; }
           mkdir -p dist
           ditto -c -k --keepParent "$root/ApkUploader.app" "dist/apk-uploader-$version-macos-arm64.zip"
+      - name: jpackage logs
+        if: failure()
+        run: cat app/build/compose/logs/*/*.txt || true
       - uses: actions/upload-artifact@v4
         with:
           name: macos

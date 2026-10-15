@@ -167,6 +167,8 @@ compose.desktop {
                 iconFile.set(project.file("icons/app-icon.png"))
             }
             macOS {
+                // jpackage on macOS rejects a 0 major version (CFBundleShortVersionString).
+                packageVersion = if (appVersion.startsWith("0.")) "1." + appVersion.removePrefix("0.") else appVersion
                 bundleID = "io.github.4uva4ek.apkuploader"
                 iconFile.set(project.file("icons/app-icon.icns"))
             }
