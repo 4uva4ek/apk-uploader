@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-10-16
 
 - Linux: folders opened by the app (the downloaded update, the log folder), notifications and the
   adb server no longer inherit the jpackage launcher's environment. Before, APK Uploader started
