@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Linux: the desktop entry and notifications reference the icon by absolute path, so KDE Plasma
+  shows it in the taskbar right after the first launch instead of a generic icon until re-login.
+
 ## 0.4.0 — 2026-10-15
 
 - Linux x64 and macOS (Apple Silicon) builds next to Windows, each with the matching pinned

@@ -11,6 +11,16 @@ import java.io.File
 object LinuxDesktopEntry {
     private const val ID = "apk-uploader"
 
+    private val dataDir: File
+        get() = System.getenv("XDG_DATA_HOME")?.takeIf { it.startsWith("/") }?.let(::File)
+            ?: File(System.getProperty("user.home"), ".local/share")
+
+    /**
+     * Referenced by absolute path rather than by theme name: a running Plasma caches failed theme
+     * lookups, so an icon installed on first launch would stay generic until the next login.
+     */
+    private val iconFile: File get() = File(dataDir, "icons/hicolor/512x512/apps/$ID.png")
+
     /**
      * Sets the X11 WM_CLASS that window managers match against StartupWMClass. Without it AWT
      * derives the class from the launching thread ("java-lang-Thread"). Must run before the
@@ -30,22 +40,20 @@ object LinuxDesktopEntry {
     fun register() {
         try {
             val launcher = System.getProperty("jpackage.app-path")?.let(::File)?.takeIf { it.isFile } ?: return
-            val data = System.getenv("XDG_DATA_HOME")?.takeIf { it.startsWith("/") }?.let(::File)
-                ?: File(System.getProperty("user.home"), ".local/share")
             val icon = checkNotNull(javaClass.getResourceAsStream("/app-icon.png")).use { it.readBytes() }
-            var changed = write(File(data, "icons/hicolor/512x512/apps/$ID.png"), icon)
+            var changed = write(iconFile, icon)
             val entry = """
                 [Desktop Entry]
                 Type=Application
                 Name=${BuildInfo.APP_NAME}
                 Comment=Install APK files and game caches on Samsung Galaxy XR over ADB
                 Exec=${quote(launcher.absolutePath)} %F
-                Icon=$ID
+                Icon=${iconFile.absolutePath}
                 Terminal=false
                 Categories=Utility;
                 StartupWMClass=$ID
             """.trimIndent() + "\n"
-            changed = write(File(data, "applications/$ID.desktop"), entry.toByteArray()) || changed
+            changed = write(File(dataDir, "applications/$ID.desktop"), entry.toByteArray()) || changed
             if (changed) AppLog.info("Desktop entry registered for ${launcher.path}")
         } catch (e: Exception) {
             AppLog.warn("Desktop entry was not registered: ${e.message}")
@@ -56,7 +64,7 @@ object LinuxDesktopEntry {
     fun notify(title: String, message: String, success: Boolean) {
         try {
             ProcessBuilder(
-                "notify-send", "--app-name=${BuildInfo.APP_NAME}", "--icon=$ID",
+                "notify-send", "--app-name=${BuildInfo.APP_NAME}", "--icon=${iconFile.absolutePath}",
                 "--urgency=${if (success) "normal" else "critical"}", "--", title, message,
             ).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
         } catch (e: Exception) {
