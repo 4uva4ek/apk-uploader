@@ -93,7 +93,7 @@ class AdbSession(private val scope: CoroutineScope, private val adbPath: () -> S
         startedHere = false
     }
 
-    /** Stops the server if this app started it, so no adb.exe keeps the app directory busy. */
+    /** Stops the server if this app started it, so no adb process keeps the app directory busy. */
     fun shutdown() {
         expectedStop = true
         job?.cancel()

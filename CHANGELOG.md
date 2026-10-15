@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-10-15
+
+- Linux x64 and macOS (Apple Silicon) builds next to Windows, each with the matching pinned
+  Android platform-tools adb (SHA-256 verified at build time).
+- Per-user data in the platform's standard location; on Linux and macOS **Updates** downloads and
+  verifies the new package and opens its folder.
+- Linux: application menu entry with icon, window class `apk-uploader`; notifications through
+  `notify-send` instead of the tray icon, which AWT cannot draw with transparency there.
+- New application icon.
+
 ## 0.3.0 — 2026-10-14
 
 - Split packages: XAPK, APKS and APKM are installed through one package-manager session

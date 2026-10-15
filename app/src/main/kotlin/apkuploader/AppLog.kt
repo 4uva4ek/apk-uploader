@@ -5,7 +5,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-/** Session log: stderr plus %LOCALAPPDATA%\ApkUploader\logs\session-*.log. */
+/** Session log: stderr plus `logs/session-*.log` in [AppDirs.root]. */
 object AppLog {
     private val timeFormat = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
     private val file: File? by lazy {

@@ -1,10 +1,24 @@
+<img src="app/icons/app-icon.png" width="96" alt="">
+
 # APK Uploader
 
-Installs APK files and game caches on **Samsung Galaxy XR** over ADB, from a Windows PC.
-Maintained by **4uva4ek**.
+Installs APK files and game caches on **Samsung Galaxy XR** over ADB, from a Windows, Linux or
+macOS PC. Maintained by **4uva4ek**.
 
-Download the ZIP from [Releases](https://github.com/4uva4ek/apk-uploader/releases), extract it
-and run `ApkUploader.exe`. Java and adb are included; nothing else needs to be installed.
+Download the package for your system from [Releases](https://github.com/4uva4ek/apk-uploader/releases).
+Java and adb are included; nothing else needs to be installed.
+
+| System | Package | Run |
+|---|---|---|
+| Windows x64 | `apk-uploader-<version>-windows-x64.zip` | extract, run `ApkUploader.exe` |
+| Linux x64 | `apk-uploader-<version>-linux-x64.tar.gz` | extract, run `ApkUploader/bin/ApkUploader` |
+| macOS (Apple Silicon) | `apk-uploader-<version>-macos-arm64.zip` | extract, move `ApkUploader.app` to Applications |
+
+- **Linux**: on first start the app adds itself to the application menu (`~/.local/share/applications`).
+  USB access to the headset needs a udev rule for Samsung devices (vendor `04e8`), for example
+  `android-udev-rules` from your distribution, and membership in its group (`adbusers` or `plugdev`).
+- **macOS**: the app is not notarized. After extracting, remove the quarantine flag once:
+  `xattr -dr com.apple.quarantine /Applications/ApkUploader.app`.
 
 ## Use
 
@@ -32,10 +46,12 @@ layouts ask for the target. APKs dropped together with their cache are installed
 Copied files are size-checked; MD5 verification can be enabled in Settings. The log panel
 (document icon in the top bar) shows what happened.
 
-**Updates** checks GitHub releases on start; a newer version is downloaded, verified by size
-and SHA-256, and installed in place with a backup of the previous version kept beside the app.
+**Updates** checks GitHub releases on start; a newer version is downloaded and verified by size
+and SHA-256. On Windows it is installed in place with a backup of the previous version kept beside
+the app; on Linux and macOS the download folder opens and you replace the app yourself.
 
-Settings and logs: `%LOCALAPPDATA%\ApkUploader`.
+Settings and logs: `%LOCALAPPDATA%\ApkUploader` (Windows), `~/.local/share/ApkUploader` (Linux),
+`~/Library/Application Support/ApkUploader` (macOS).
 
 ## What it changes on the headset
 

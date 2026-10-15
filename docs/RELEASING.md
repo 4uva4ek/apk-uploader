@@ -1,9 +1,10 @@
 # Releasing
 
-Workflow: `.github/workflows/release.yml` (**Release**). It builds the portable Windows
-application on `windows-latest`, runs the unit tests and the updater helper tests, checks the
-package contents (launcher, Java runtime, bundled adb) and uploads a ZIP with `SHA256SUMS.txt`.
-A `v*` tag publishes a GitHub release with those files; manual runs only produce artifacts.
+Workflow: `.github/workflows/release.yml` (**Release**). It builds the portable application on
+`windows-latest`, `ubuntu-22.04` and `macos-latest` (Apple Silicon), runs the unit tests (and the
+Windows updater helper tests), checks each package's contents (launcher, bundled adb) and uploads
+`apk-uploader-<version>-windows-x64.zip`, `-linux-x64.tar.gz` and `-macos-arm64.zip`. A `v*` tag
+publishes a GitHub release with those files and `SHA256SUMS.txt`; manual runs only produce artifacts.
 
 ## Version and validation
 
@@ -13,21 +14,27 @@ A `v*` tag publishes a GitHub release with those files; manual runs only produce
    `./gradlew :app:test`, `tools/test_windows_updater.ps1` when the updater changed.
 4. Push `main`, then run **Release** manually and check the artifact: extract the ZIP, run
    `ApkUploader.exe`, connect the headset, install a test APK and a cache folder.
-5. Create and push the tag `v<version>` at the validated commit. The tag run publishes
-   `apk-uploader-<version>-windows-x64.zip` and `SHA256SUMS.txt`.
+5. Create and push the tag `v<version>` at the validated commit. The tag run publishes the three
+   packages and `SHA256SUMS.txt`.
 
-Release assets must keep these names: the in-app updater downloads
-`apk-uploader-<version>-windows-x64.zip` from the latest stable release and verifies its
-size and SHA-256 digest from the GitHub API. Do not move published tags or rename assets;
-publish a new version instead. Windows packages are not Authenticode signed.
+Release assets must keep these names: the in-app updater downloads the package for its platform
+from the latest stable release and verifies its size and SHA-256 digest from the GitHub API. Do
+not move published tags or rename assets; publish a new version instead. Windows packages are not
+Authenticode signed; macOS packages are ad-hoc signed by jpackage and not notarized.
 
 ## Bundled adb
 
-`app/build.gradle.kts` pins the Android SDK Platform-Tools release (version, URL and
-SHA-256). The `fetchPlatformTools` task downloads the archive, verifies it and stages
-`adb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll`, `libwinpthread-1.dll`, `NOTICE.txt` and
-`source.properties` into `app/build/platform-tools/windows`, which Compose packages as
-`app/resources`. To update adb, change the three values together and rebuild.
+`app/build.gradle.kts` pins the Android SDK Platform-Tools release: one version and an archive
+SHA-256 for each of Windows, Linux and macOS. The `fetchPlatformTools` task downloads the archive
+for the build host, verifies it and stages the adb client files (`adb.exe` with its DLLs on
+Windows, `adb` elsewhere, plus `NOTICE.txt` and `source.properties`) into
+`app/build/platform-tools/<windows|linux|macos>`, which Compose packages as the app resources.
+To update adb, change the version and all three hashes together.
+
+## Icon
+
+`app/icons/app-icon.png` (512 px, window, Linux and README), `app-icon.ico` (Windows) and
+`app-icon.icns` (macOS) are generated from one drawing; keep the three in sync.
 
 ## Runtime modules
 

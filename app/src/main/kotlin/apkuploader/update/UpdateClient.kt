@@ -14,6 +14,7 @@ data class AppUpdate(val version: String, val asset: ReleaseAsset, val sha256: S
 object UpdateClient {
     const val REPOSITORY = BuildInfo.REPOSITORY
     const val TAG_PREFIX = "v"
+    val PLATFORMS = setOf("windows-x64.zip", "macos-arm64.zip", "linux-x64.tar.gz")
     private const val API = "https://api.github.com/repos/4uva4ek/apk-uploader/releases/latest"
     private val json = Json { ignoreUnknownKeys = true }
     private val versionPattern = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
@@ -30,7 +31,7 @@ object UpdateClient {
         if (release.draft || release.prerelease || !release.tagName.startsWith(TAG_PREFIX)) return null
         val version = release.tagName.removePrefix(TAG_PREFIX)
         if (!newer(version, installed)) return null
-        require(platform == "windows-x64.zip")
+        require(platform in PLATFORMS) { "Unknown release platform: $platform" }
         val name = "apk-uploader-$version-$platform"
         val asset = release.assets.singleOrNull { it.name == name } ?: error("This release has no unique $platform package yet.")
         require(asset.url == "$REPOSITORY/releases/download/${release.tagName}/$name") { "Unexpected update download URL." }

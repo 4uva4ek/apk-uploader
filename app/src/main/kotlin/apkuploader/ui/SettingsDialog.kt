@@ -40,7 +40,7 @@ fun SettingsDialog(model: AppModel, onDismiss: () -> Unit) {
                 OutlinedTextField(
                     value = settings.adbPath,
                     onValueChange = { v -> model.settings.update { copy(adbPath = v) } },
-                    label = { Text("adb.exe path (empty = bundled adb)") },
+                    label = { Text("adb path (empty = bundled adb)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )

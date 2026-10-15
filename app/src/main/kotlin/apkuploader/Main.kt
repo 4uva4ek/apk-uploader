@@ -25,6 +25,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import apkuploader.ui.AppContent
+import apkuploader.update.DownloadAppUpdater
 import apkuploader.update.WindowsAppUpdater
 import com.formdev.flatlaf.util.SystemFileChooser
 import kotlinx.coroutines.CoroutineScope
@@ -39,12 +40,23 @@ fun main(args: Array<String>) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     val model = AppModel(scope)
     model.start()
+    if (Platform.os == Os.LINUX) {
+        LinuxDesktopEntry.setWindowClass()
+        LinuxDesktopEntry.register()
+    }
 
     application {
         val iconPainter = remember { BitmapPainter(useResource("app-icon.png") { loadImageBitmap(it) }) }
         val trayState = rememberTrayState()
+        // AWT draws Linux tray icons through XEmbed without transparency (a white square in KDE),
+        // so on Linux there is no tray icon and notifications go through the desktop's notify-send.
+        val useTray = Platform.os != Os.LINUX
         model.notifier = { title, message, success ->
-            trayState.sendNotification(Notification(title, message, if (success) Notification.Type.Info else Notification.Type.Warning))
+            if (useTray) {
+                trayState.sendNotification(Notification(title, message, if (success) Notification.Type.Info else Notification.Type.Warning))
+            } else {
+                LinuxDesktopEntry.notify(title, message, success)
+            }
         }
 
         fun quit() {
@@ -52,12 +64,14 @@ fun main(args: Array<String>) {
             exitApplication()
         }
 
-        Tray(
-            icon = iconPainter,
-            state = trayState,
-            tooltip = BuildInfo.APP_NAME,
-            menu = { Item("Quit ${BuildInfo.APP_NAME}", onClick = ::quit) },
-        )
+        if (useTray) {
+            Tray(
+                icon = iconPainter,
+                state = trayState,
+                tooltip = BuildInfo.APP_NAME,
+                menu = { Item("Quit ${BuildInfo.APP_NAME}", onClick = ::quit) },
+            )
+        }
 
         Window(
             onCloseRequest = ::quit,
@@ -105,7 +119,11 @@ fun main(args: Array<String>) {
                 AppContent(
                     model = model,
                     updater = remember {
-                        WindowsAppUpdater(beforeExit = { runBlocking { model.shutdown() } }, exit = ::exitApplication)
+                        if (Platform.os == Os.WINDOWS) {
+                            WindowsAppUpdater(beforeExit = { runBlocking { model.shutdown() } }, exit = ::exitApplication)
+                        } else {
+                            DownloadAppUpdater()
+                        }
                     },
                     pickFiles = { pick("Add APK files", directories = false) },
                     pickFolder = { pick("Add cache folder", directories = true) },
